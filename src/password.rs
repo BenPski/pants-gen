@@ -1,11 +1,17 @@
-use std::collections::HashSet;
+use std::borrow::Borrow;
+use std::error::Error;
+use std::fmt::Display;
 use std::hash::Hash;
+use std::{collections::HashSet, str::FromStr};
 
 use rand::{
     seq::{IteratorRandom, SliceRandom},
     thread_rng,
 };
 
+use crate::interval::Interval;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Password {
     choices: Choices,
     length: usize,
@@ -22,6 +28,96 @@ impl Default for Password {
             choices,
             length: 32,
         }
+    }
+}
+
+#[derive(Debug)]
+pub enum PasswordParseError {
+    ImproperFormat,
+    InvalidLength,
+}
+
+impl Error for PasswordParseError {}
+
+impl Display for PasswordParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ImproperFormat => write!(
+                f,
+                "Password spec improperly formatted, expect [charset|interval]{{length}}"
+            ),
+            Self::InvalidLength => write!(
+                f,
+                "Length in the password spec was not a non-negative number"
+            ),
+        }
+    }
+}
+
+// password spec specified as a string would look something like
+// [:upper:|1+][:lower:|5-][Aa|2]{16}
+// (Upper, at least 1) (Lower, at most 5) (Custom(Aa), exactly 2) length=16
+impl FromStr for Password {
+    type Err = PasswordParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut groups = vec![];
+        let mut length = vec![];
+        let mut lenght_done = false;
+        let mut cursor = 0;
+        let chars: Vec<char> = s.chars().collect();
+        while cursor < s.len() {
+            let c = chars[cursor];
+            if c == '[' {
+                cursor += 1;
+                let mut group = vec![];
+                while cursor < s.len() {
+                    let c = chars[cursor];
+                    if c == ']' {
+                        groups.push(group);
+                        break;
+                    }
+                    group.push(c);
+                    cursor += 1;
+                }
+            } else if c == '{' && !lenght_done {
+                cursor += 1;
+                while cursor < s.len() {
+                    let c = chars[cursor];
+                    if c.is_numeric() {
+                        length.push(c);
+                    } else {
+                        if c == '}' {
+                            lenght_done = true;
+                            break;
+                        }
+                        return Err(PasswordParseError::InvalidLength);
+                    }
+                    cursor += 1;
+                }
+            } else {
+                return Err(PasswordParseError::ImproperFormat);
+            }
+            cursor += 1;
+        }
+        let length = length
+            .into_iter()
+            .collect::<String>()
+            .parse()
+            .map_err(|_| PasswordParseError::InvalidLength)?;
+        let mut choices = vec![];
+        for group in groups {
+            let c = group
+                .into_iter()
+                .collect::<String>()
+                .parse()
+                .map_err(|_| PasswordParseError::ImproperFormat)?;
+            choices.push(c);
+        }
+
+        Ok(Password {
+            choices: Choices::from(choices),
+            length,
+        })
     }
 }
 
@@ -81,20 +177,9 @@ impl Password {
         self
     }
 
-    pub fn upper(mut self, min: usize, max: usize) -> Self {
-        if min <= max {
-            self.choices.push(Choice {
-                min,
-                max,
-                chars: CharStyle::Upper,
-            })
-        } else {
-            self.choices.push(Choice {
-                max,
-                min,
-                chars: CharStyle::Upper,
-            })
-        }
+    pub fn upper(mut self, interval: Interval) -> Self {
+        self.choices
+            .push(Choice::from_interval(interval, CharStyle::Upper));
         self
     }
     pub fn upper_at_least(mut self, size: usize) -> Self {
@@ -109,20 +194,10 @@ impl Password {
         self.choices.push(CharStyle::Upper.exactly(size));
         self
     }
-    pub fn lower(mut self, min: usize, max: usize) -> Self {
-        if min <= max {
-            self.choices.push(Choice {
-                min,
-                max,
-                chars: CharStyle::Lower,
-            })
-        } else {
-            self.choices.push(Choice {
-                max,
-                min,
-                chars: CharStyle::Lower,
-            })
-        }
+    pub fn lower(mut self, interval: Interval) -> Self {
+        self.choices
+            .push(Choice::from_interval(interval, CharStyle::Lower));
+
         self
     }
     pub fn lower_at_least(mut self, size: usize) -> Self {
@@ -137,20 +212,10 @@ impl Password {
         self.choices.push(CharStyle::Lower.exactly(size));
         self
     }
-    pub fn number(mut self, min: usize, max: usize) -> Self {
-        if min <= max {
-            self.choices.push(Choice {
-                min,
-                max,
-                chars: CharStyle::Number,
-            })
-        } else {
-            self.choices.push(Choice {
-                max,
-                min,
-                chars: CharStyle::Number,
-            })
-        }
+    pub fn number(mut self, interval: Interval) -> Self {
+        self.choices
+            .push(Choice::from_interval(interval, CharStyle::Number));
+
         self
     }
     pub fn number_at_least(mut self, size: usize) -> Self {
@@ -165,20 +230,10 @@ impl Password {
         self.choices.push(CharStyle::Number.exactly(size));
         self
     }
-    pub fn symbol(mut self, min: usize, max: usize) -> Self {
-        if min <= max {
-            self.choices.push(Choice {
-                min,
-                max,
-                chars: CharStyle::Symbol,
-            })
-        } else {
-            self.choices.push(Choice {
-                max,
-                min,
-                chars: CharStyle::Symbol,
-            })
-        }
+    pub fn symbol(mut self, interval: Interval) -> Self {
+        self.choices
+            .push(Choice::from_interval(interval, CharStyle::Symbol));
+
         self
     }
     pub fn symbol_at_least(mut self, size: usize) -> Self {
@@ -194,20 +249,10 @@ impl Password {
         self
     }
 
-    pub fn custom(mut self, chars: Vec<char>, min: usize, max: usize) -> Self {
-        if min <= max {
-            self.choices.push(Choice {
-                min,
-                max,
-                chars: CharStyle::Custom(chars),
-            })
-        } else {
-            self.choices.push(Choice {
-                max,
-                min,
-                chars: CharStyle::Custom(chars),
-            })
-        }
+    pub fn custom(mut self, chars: Vec<char>, interval: Interval) -> Self {
+        self.choices
+            .push(Choice::from_interval(interval, CharStyle::Custom(chars)));
+
         self
     }
     pub fn custom_at_least(mut self, chars: Vec<char>, size: usize) -> Self {
@@ -224,7 +269,6 @@ impl Password {
     }
 }
 
-// TODO: generic character sets value
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CharStyle {
     Upper,
@@ -271,9 +315,17 @@ impl CharStyle {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Choices {
     choices: HashSet<Choice>,
+}
+
+impl From<Vec<Choice>> for Choices {
+    fn from(value: Vec<Choice>) -> Self {
+        Choices {
+            choices: HashSet::from_iter(value),
+        }
+    }
 }
 
 impl Choices {
@@ -284,7 +336,7 @@ impl Choices {
     }
 
     fn push(&mut self, choice: Choice) {
-        self.choices.insert(choice);
+        self.choices.replace(choice);
     }
 }
 
@@ -317,12 +369,70 @@ impl Hash for Choice {
     }
 }
 
+#[derive(Debug)]
+enum ChoiceParseError {
+    NoInterval,
+    NoCharset,
+    UnrecognizedPattern,
+}
+impl Error for ChoiceParseError {}
+
+impl Display for ChoiceParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoInterval => write!(
+                f,
+                "Need both a character set and interval when specifying a choice, charset|interval"
+            ),
+            Self::NoCharset => write!(
+                f,
+                "The charset was empty, required that the charset have at least one character"
+            ),
+            Self::UnrecognizedPattern => write!(f, "The given pattern does not exist"),
+        }
+    }
+}
+
+// chars|interval -> Choice
+impl FromStr for Choice {
+    type Err = Box<dyn Error>;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let pos = s.rfind('|').ok_or(ChoiceParseError::NoInterval)?;
+        let str: String = s[..pos].parse()?;
+        let interval = s[pos + 1..].parse()?;
+        match str.borrow() {
+            ":upper:" => Ok(Choice::from_interval(interval, CharStyle::Upper)),
+            ":lower:" => Ok(Choice::from_interval(interval, CharStyle::Lower)),
+            ":number:" => Ok(Choice::from_interval(interval, CharStyle::Number)),
+            ":symbol:" => Ok(Choice::from_interval(interval, CharStyle::Symbol)),
+            _ => {
+                let chars = str.chars().collect::<Vec<_>>();
+                if str.is_empty() {
+                    Err(ChoiceParseError::NoCharset.into())
+                } else if chars[0] == ':' && chars[str.len() - 1] == ':' {
+                    Err(ChoiceParseError::UnrecognizedPattern.into())
+                } else {
+                    Ok(Choice::from_interval(interval, CharStyle::Custom(chars)))
+                }
+            }
+        }
+    }
+}
+
 impl Choice {
     fn new(min: usize, max: usize, chars: CharStyle) -> Option<Self> {
         if max >= min {
             Some(Self { min, max, chars })
         } else {
             None
+        }
+    }
+
+    fn from_interval(interval: Interval, chars: CharStyle) -> Self {
+        Self {
+            min: interval.min,
+            max: interval.max,
+            chars,
         }
     }
 
