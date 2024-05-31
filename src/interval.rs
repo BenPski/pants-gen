@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, str::FromStr};
+use std::{error::Error, fmt::Display, str::FromStr, usize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interval {
@@ -12,6 +12,35 @@ impl Interval {
             Some(Self { min, max })
         } else {
             None
+        }
+    }
+
+    pub fn at_least(size: usize) -> Self {
+        Self {
+            min: size,
+            max: usize::MAX,
+        }
+    }
+
+    pub fn at_most(size: usize) -> Self {
+        Self {
+            min: usize::MIN,
+            max: size,
+        }
+    }
+
+    pub fn exactly(size: usize) -> Self {
+        Self {
+            min: size,
+            max: size,
+        }
+    }
+
+    pub fn safe(a: usize, b: usize) -> Self {
+        if a <= b {
+            Self { min: a, max: b }
+        } else {
+            Self { min: b, max: a }
         }
     }
 }
