@@ -50,24 +50,28 @@ pub struct CliArgs {
 impl CliArgs {
     pub fn run() -> Option<String> {
         let args = CliArgs::parse();
-        let mut password_spec = args.spec;
-        if let Some(length) = args.length {
-            password_spec = password_spec.length(length);
+        args.execute()
+    }
+
+    pub fn execute(self) -> Option<String> {
+        let mut password_spec = self.spec;
+        if let Some(length) = &self.length {
+            password_spec = password_spec.length(*length);
         }
-        if let Some(upper) = args.upper {
+        if let Some(upper) = self.upper {
             password_spec = password_spec.upper(upper);
         }
-        if let Some(lower) = args.lower {
+        if let Some(lower) = self.lower {
             password_spec = password_spec.lower(lower);
         }
-        if let Some(number) = args.number {
+        if let Some(number) = self.number {
             password_spec = password_spec.number(number);
         }
-        if let Some(symbol) = args.symbol {
+        if let Some(symbol) = self.symbol {
             password_spec = password_spec.symbol(symbol);
         }
 
-        for c in args.custom {
+        for c in self.custom {
             password_spec = password_spec.include(c);
         }
         password_spec.generate()
