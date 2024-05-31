@@ -310,8 +310,12 @@ impl CharStyle {
         Choice::exactly(size, self)
     }
 
-    pub fn as_choice(self, min: usize, max: usize) -> Option<Choice> {
+    pub fn between(self, min: usize, max: usize) -> Option<Choice> {
         Choice::new(min, max, self)
+    }
+
+    pub fn from_interval(self, interval: Interval) -> Choice {
+        Choice::from_interval(interval, self)
     }
 }
 
@@ -370,10 +374,12 @@ impl Hash for Choice {
 }
 
 #[derive(Debug)]
-enum ChoiceParseError {
+pub enum ChoiceParseError {
     NoInterval,
     NoCharset,
     UnrecognizedPattern,
+    BadCharset,
+    BadInterval,
 }
 impl Error for ChoiceParseError {}
 
@@ -389,17 +395,21 @@ impl Display for ChoiceParseError {
                 "The charset was empty, required that the charset have at least one character"
             ),
             Self::UnrecognizedPattern => write!(f, "The given pattern does not exist"),
+            Self::BadCharset => write!(f, "Unable to parse given charset"),
+            Self::BadInterval => write!(f, "Unable to parse given interval"),
         }
     }
 }
 
 // chars|interval -> Choice
 impl FromStr for Choice {
-    type Err = Box<dyn Error>;
+    type Err = ChoiceParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let pos = s.rfind('|').ok_or(ChoiceParseError::NoInterval)?;
-        let str: String = s[..pos].parse()?;
-        let interval = s[pos + 1..].parse()?;
+        let str: String = s[..pos].parse().map_err(|_| ChoiceParseError::BadCharset)?;
+        let interval = s[pos + 1..]
+            .parse()
+            .map_err(|_| ChoiceParseError::BadInterval)?;
         match str.borrow() {
             ":upper:" => Ok(Choice::from_interval(interval, CharStyle::Upper)),
             ":lower:" => Ok(Choice::from_interval(interval, CharStyle::Lower)),
@@ -408,9 +418,9 @@ impl FromStr for Choice {
             _ => {
                 let chars = str.chars().collect::<Vec<_>>();
                 if str.is_empty() {
-                    Err(ChoiceParseError::NoCharset.into())
+                    Err(ChoiceParseError::NoCharset)
                 } else if chars[0] == ':' && chars[str.len() - 1] == ':' {
-                    Err(ChoiceParseError::UnrecognizedPattern.into())
+                    Err(ChoiceParseError::UnrecognizedPattern)
                 } else {
                     Ok(Choice::from_interval(interval, CharStyle::Custom(chars)))
                 }

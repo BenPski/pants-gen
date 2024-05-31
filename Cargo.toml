@@ -3,6 +3,14 @@ name = "pants-gen"
 version = "0.1.0"
 edition = "2021"
 description = "A password generator."
+authors = ["Ben Pawlowski ben@pepski.com"]
+license = "MIT"
+repository = "https://github.com/BenPski/pants-gen"
+readme = "README.md"
+exclude = [".github", "scripts"]
+rust-version = "1.63.0"
+keywords = ["passwords"]
+categories = ["command-line-utilities", "cryptography"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

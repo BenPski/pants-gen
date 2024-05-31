@@ -1,6 +1,7 @@
-use std::error::Error;
-
-use crate::{interval::Interval, password::Password};
+use crate::{
+    interval::Interval,
+    password::{Choice, Password},
+};
 use clap::Parser;
 
 #[derive(Debug, Parser)]
@@ -42,15 +43,8 @@ pub struct CliArgs {
     #[arg(short, long)]
     symbol: Option<Interval>,
     /// constraints on custom characters, CHARSET|INTERVAL
-    #[arg(short, long, value_parser=parse_custom)]
-    custom: Vec<(String, Interval)>,
-}
-
-fn parse_custom(s: &str) -> Result<(String, Interval), Box<dyn Error + Send + Sync + 'static>> {
-    let pos = s
-        .rfind('|')
-        .ok_or_else(|| format!("invalid CHARS|interval: no | found in `{s}`"))?;
-    Ok((s[..pos].parse()?, s[pos + 1..].parse()?))
+    #[arg(short, long)]
+    custom: Vec<Choice>,
 }
 
 impl CliArgs {
@@ -74,7 +68,7 @@ impl CliArgs {
         }
 
         for c in args.custom {
-            password_spec = password_spec.custom(c.0.chars().collect(), c.1);
+            password_spec = password_spec.include(c);
         }
         password_spec.generate()
     }
