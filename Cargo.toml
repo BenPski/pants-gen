@@ -17,3 +17,4 @@ categories = ["command-line-utilities", "cryptography"]
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
 rand = "0.8.5"
+thiserror = "1.0.61"

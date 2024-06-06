@@ -1,68 +1,53 @@
-use std::borrow::Borrow;
-use std::error::Error;
 use std::fmt::Display;
 use std::hash::Hash;
+use std::usize;
 use std::{collections::HashSet, str::FromStr};
 
 use rand::{
     seq::{IteratorRandom, SliceRandom},
     thread_rng,
 };
+use thiserror::Error;
 
 use crate::interval::Interval;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Password {
+pub struct PasswordSpec {
     choices: Choices,
     length: usize,
 }
 
-impl Default for Password {
+impl Default for PasswordSpec {
     fn default() -> Self {
         let mut choices = Choices::new();
         choices.push(CharStyle::Upper.at_least(1));
         choices.push(CharStyle::Lower.at_least(1));
         choices.push(CharStyle::Number.at_least(1));
         choices.push(CharStyle::Symbol.at_least(1));
-        Password {
+        PasswordSpec {
             choices,
             length: 32,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum PasswordParseError {
+    #[error("Password spec improperly formatted, expect [charset|interval]{{length}}")]
     ImproperFormat,
+    #[error("Length in the password spec was not a non-negative number")]
     InvalidLength,
-}
-
-impl Error for PasswordParseError {}
-
-impl Display for PasswordParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ImproperFormat => write!(
-                f,
-                "Password spec improperly formatted, expect [charset|interval]{{length}}"
-            ),
-            Self::InvalidLength => write!(
-                f,
-                "Length in the password spec was not a non-negative number"
-            ),
-        }
-    }
 }
 
 // password spec specified as a string would look something like
 // [:upper:|1+][:lower:|5-][Aa|2]{16}
 // (Upper, at least 1) (Lower, at most 5) (Custom(Aa), exactly 2) length=16
-impl FromStr for Password {
+impl FromStr for PasswordSpec {
     type Err = PasswordParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut groups = vec![];
         let mut length = vec![];
-        let mut lenght_done = false;
+        let mut length_done = false;
         let mut cursor = 0;
         let chars: Vec<char> = s.chars().collect();
         while cursor < s.len() {
@@ -79,7 +64,7 @@ impl FromStr for Password {
                     group.push(c);
                     cursor += 1;
                 }
-            } else if c == '{' && !lenght_done {
+            } else if c == '{' && !length_done {
                 cursor += 1;
                 while cursor < s.len() {
                     let c = chars[cursor];
@@ -87,7 +72,7 @@ impl FromStr for Password {
                         length.push(c);
                     } else {
                         if c == '}' {
-                            lenght_done = true;
+                            length_done = true;
                             break;
                         }
                         return Err(PasswordParseError::InvalidLength);
@@ -114,14 +99,21 @@ impl FromStr for Password {
             choices.push(c);
         }
 
-        Ok(Password {
+        Ok(PasswordSpec {
             choices: Choices::from(choices),
             length,
         })
     }
 }
 
-impl Password {
+impl Display for PasswordSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.choices)?;
+        write!(f, "{{{}}}", self.length)
+    }
+}
+
+impl PasswordSpec {
     pub fn new() -> Self {
         Self {
             choices: Choices::new(),
@@ -161,8 +153,8 @@ impl Password {
         let mut min_length: usize = 0;
         let mut max_length: usize = 0;
         for choice in &self.choices.choices {
-            min_length = min_length.checked_add(choice.min).unwrap_or(usize::MAX);
-            max_length = max_length.checked_add(choice.max).unwrap_or(usize::MAX);
+            min_length = min_length.saturating_add(choice.min);
+            max_length = max_length.saturating_add(choice.max);
         }
         min_length <= self.length && self.length <= max_length
     }
@@ -285,13 +277,11 @@ impl CharStyle {
             Self::Lower => ('a'..='z').collect(),
             Self::Number => ('1'..='9').collect(),
             Self::Symbol => {
-                // no real standard for allowed character sets for symbols, but I have some suspicions
-                // about disallowed ones
-                // for now not including quotes and backslash even though I think others could be
-                // troublesome
+                // no real standard for allowed character sets for symbols
+                // there are likely a few obvious ones that are concerns with escaping and are
+                // interpretted as special characters at the command line that are removed
                 vec![
-                    '!', '@', '#', '%', '^', '&', '*', '(', ')', '-', '_', '=', '+', '[', '{', ']',
-                    '}', '|', ':', ';', ',', '.', '?', '<', '>', '~',
+                    '!', '@', '%', '^', '&', '*', '-', '_', '=', '+', ':', ';', ',', '.', '?', '~',
                 ]
             }
             Self::Custom(v) => v.to_vec(),
@@ -319,6 +309,49 @@ impl CharStyle {
     }
 }
 
+impl Display for CharStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CharStyle::Upper => write!(f, ":upper:")?,
+            CharStyle::Lower => write!(f, ":lower:")?,
+            CharStyle::Number => write!(f, ":number:")?,
+            CharStyle::Symbol => write!(f, ":symbol:")?,
+            CharStyle::Custom(c) => write!(f, "{}", c.iter().collect::<String>())?,
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CharStyleParseError {
+    #[error("No character set")]
+    NoCharset,
+    #[error("Specified a :pattern:, but it wasn't recognized")]
+    UnrecognizedPattern,
+}
+
+impl FromStr for CharStyle {
+    type Err = CharStyleParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            ":upper:" => Ok(CharStyle::Upper),
+            ":lower:" => Ok(CharStyle::Lower),
+            ":number:" => Ok(CharStyle::Number),
+            ":symbol:" => Ok(CharStyle::Symbol),
+            _ => {
+                let chars = s.chars().collect::<Vec<_>>();
+                if s.is_empty() {
+                    Err(CharStyleParseError::NoCharset)
+                } else if chars[0] == ':' && chars[s.len() - 1] == ':' {
+                    Err(CharStyleParseError::UnrecognizedPattern)
+                } else {
+                    Ok(CharStyle::Custom(chars))
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Choices {
     choices: HashSet<Choice>,
@@ -331,6 +364,28 @@ impl From<Vec<Choice>> for Choices {
         }
     }
 }
+
+impl Display for Choices {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for choice in &self.choices {
+            write!(f, "[{}]", choice)?;
+        }
+        Ok(())
+    }
+}
+
+// Implementing FromStr needs an overall better parsing strategy
+// #[derive(Debug, Error)]
+// enum ChoicesParseError {
+//
+// }
+//
+// impl FromStr for Choices {
+//     type Err = ChoicesParseError;
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//
+//     }
+// }
 
 impl Choices {
     fn new() -> Self {
@@ -373,32 +428,14 @@ impl Hash for Choice {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ChoiceParseError {
+    #[error("Need both a character set and interval when specifying a choice, charset|interval")]
     NoInterval,
-    NoCharset,
-    UnrecognizedPattern,
-    BadCharset,
+    #[error("Unable to parse the given interval")]
     BadInterval,
-}
-impl Error for ChoiceParseError {}
-
-impl Display for ChoiceParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NoInterval => write!(
-                f,
-                "Need both a character set and interval when specifying a choice, charset|interval"
-            ),
-            Self::NoCharset => write!(
-                f,
-                "The charset was empty, required that the charset have at least one character"
-            ),
-            Self::UnrecognizedPattern => write!(f, "The given pattern does not exist"),
-            Self::BadCharset => write!(f, "Unable to parse given charset"),
-            Self::BadInterval => write!(f, "Unable to parse given interval"),
-        }
-    }
+    #[error("Charset parse error, `{0}`")]
+    CharStyle(CharStyleParseError),
 }
 
 // chars|interval -> Choice
@@ -406,26 +443,28 @@ impl FromStr for Choice {
     type Err = ChoiceParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let pos = s.rfind('|').ok_or(ChoiceParseError::NoInterval)?;
-        let str: String = s[..pos].parse().map_err(|_| ChoiceParseError::BadCharset)?;
+        let chars: CharStyle = s[..pos].parse().map_err(ChoiceParseError::CharStyle)?;
         let interval = s[pos + 1..]
             .parse()
             .map_err(|_| ChoiceParseError::BadInterval)?;
-        match str.borrow() {
-            ":upper:" => Ok(Choice::from_interval(interval, CharStyle::Upper)),
-            ":lower:" => Ok(Choice::from_interval(interval, CharStyle::Lower)),
-            ":number:" => Ok(Choice::from_interval(interval, CharStyle::Number)),
-            ":symbol:" => Ok(Choice::from_interval(interval, CharStyle::Symbol)),
-            _ => {
-                let chars = str.chars().collect::<Vec<_>>();
-                if str.is_empty() {
-                    Err(ChoiceParseError::NoCharset)
-                } else if chars[0] == ':' && chars[str.len() - 1] == ':' {
-                    Err(ChoiceParseError::UnrecognizedPattern)
-                } else {
-                    Ok(Choice::from_interval(interval, CharStyle::Custom(chars)))
-                }
-            }
+        Ok(Choice::from_interval(interval, chars))
+    }
+}
+
+impl Display for Choice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.chars)?;
+        write!(f, "|")?;
+        if self.min == self.max {
+            write!(f, "{}", self.min)?;
+        } else if self.min == usize::MIN {
+            write!(f, "{}-", self.max)?;
+        } else if self.max == usize::MAX {
+            write!(f, "{}+", self.min)?;
+        } else {
+            write!(f, "{}-{}", self.min, self.max)?;
         }
+        Ok(())
     }
 }
 
