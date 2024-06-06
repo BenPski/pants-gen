@@ -43,9 +43,9 @@
 //! function returns an `Option` since the constraints on the provided choices can't always meet
 //! the length requirement given.
 //! ```rust
-//! use pants_gen::password::{Password, CharStyle};
+//! use pants_gen::password::{PasswordSpec, CharStyle};
 //! use pants_gen::interval::Interval;
-//! let spec = Password::new()
+//! let spec = PasswordSpec::new()
 //!     .length(16)
 //!     .upper_at_least(1)
 //!     .lower(Interval::new(1,10).unwrap())

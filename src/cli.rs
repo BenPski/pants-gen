@@ -1,6 +1,6 @@
 use crate::{
     interval::Interval,
-    password::{Choice, Password},
+    password::{Choice, PasswordSpec},
 };
 use clap::Parser;
 
@@ -26,7 +26,7 @@ pub struct CliArgs {
         long,
         default_value = "[:upper:|1+][:lower:|1+][:number:|1+][:symbol:|1+]{32}"
     )]
-    spec: Password,
+    spec: PasswordSpec,
     /// length of the generated password
     #[arg(short, long)]
     length: Option<usize>,

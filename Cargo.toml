@@ -1,6 +1,6 @@
 [package]
 name = "pants-gen"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "A password generator."
 authors = ["Ben Pawlowski ben@pepski.com"]
@@ -17,3 +17,4 @@ categories = ["command-line-utilities", "cryptography"]
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
 rand = "0.8.5"
+thiserror = "1.0.61"
