@@ -54,7 +54,7 @@ mod tests {
         let spec = PasswordSpec::default().number_at_least(amount);
         let gen = spec
             .generate()
-            .map(|s| s.chars().filter(|c| c.is_digit(10)).count())
+            .map(|s| s.chars().filter(|c| c.is_ascii_digit()).count())
             .unwrap();
 
         assert!(gen >= amount);
