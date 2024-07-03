@@ -499,8 +499,6 @@ impl FromStr for Choice {
 
 impl Display for Choice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.chars)?;
-        write!(f, "|")?;
         if self.min == self.max {
             write!(f, "{}", self.min)?;
         } else if self.min == usize::MIN {
@@ -510,6 +508,8 @@ impl Display for Choice {
         } else {
             write!(f, "{}-{}", self.min, self.max)?;
         }
+        write!(f, "|")?;
+        write!(f, "{}", self.chars)?;
         Ok(())
     }
 }

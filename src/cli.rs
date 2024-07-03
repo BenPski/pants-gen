@@ -3,6 +3,9 @@ use crate::{
     password::{Choice, PasswordSpec},
 };
 use clap::Parser;
+use once_cell::sync::Lazy;
+
+static DEFAULT_SPEC: Lazy<String> = Lazy::new(|| PasswordSpec::default().to_string());
 
 #[derive(Debug, Parser)]
 #[command(
@@ -24,7 +27,7 @@ pub struct CliArgs {
     #[arg(
         short = 'p',
         long,
-        default_value = "32//1+|:upper://1+|:lower://1+|:number://1+|:symbol:"
+        default_value = DEFAULT_SPEC.as_str()
     )]
     spec: PasswordSpec,
     /// length of the generated password
