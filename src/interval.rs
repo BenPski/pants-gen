@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, str::FromStr, usize};
+use std::{error::Error, fmt::Display, str::FromStr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interval {

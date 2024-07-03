@@ -1,6 +1,5 @@
 use std::fmt::Display;
 use std::hash::Hash;
-use std::usize;
 use std::{collections::HashSet, str::FromStr};
 
 use rand::{
