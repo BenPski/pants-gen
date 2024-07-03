@@ -7,7 +7,7 @@ fn main() {
     if let Some(p) = password {
         println!("{}", p);
     } else {
-        println!("Contraints couldn't be met try again");
+        println!("Contraints couldn't be met, try again after adjusting the spec");
         exit(1)
     }
 }

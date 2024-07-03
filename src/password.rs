@@ -1,6 +1,5 @@
 use std::fmt::Display;
 use std::hash::Hash;
-use std::usize;
 use std::{collections::HashSet, str::FromStr};
 
 use rand::{
@@ -13,8 +12,8 @@ use crate::interval::Interval;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasswordSpec {
-    choices: Choices,
     length: usize,
+    choices: Choices,
 }
 
 impl Default for PasswordSpec {
@@ -33,83 +32,130 @@ impl Default for PasswordSpec {
 
 #[derive(Debug, Error)]
 pub enum PasswordParseError {
-    #[error("Password spec improperly formatted, expect [charset|interval]{{length}}")]
+    #[error("Password spec improperly formatted, expect something like length//interval|charset//interval|charset (likely an internal parsing error)")]
     ImproperFormat,
-    #[error("Length in the password spec was not a non-negative number")]
-    InvalidLength,
+    #[error("Couldn't parse the length segment of the spec `{0}`, expects it to be the first segment of the spec (length//...).")]
+    InvalidLength(String),
+    #[error("Couldn't parse the interval `{0}`.")]
+    BadInterval(String),
+    #[error("Couldn't parse the charset `{0}`.")]
+    BadCharset(String),
 }
 
 // password spec specified as a string would look something like
-// [:upper:|1+][:lower:|5-][Aa|2]{16}
+// 16//1+|:upper://5-|:lower://2|Aa
 // (Upper, at least 1) (Lower, at most 5) (Custom(Aa), exactly 2) length=16
+
 impl FromStr for PasswordSpec {
     type Err = PasswordParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut groups = vec![];
-        let mut length = vec![];
-        let mut length_done = false;
-        let mut cursor = 0;
+        let s = s.trim_start();
+        let first_sep = "//".to_string();
+        let first_sep_char = first_sep.chars().last().unwrap();
+        let second_sep = "|".to_string();
+        let mut spec = PasswordSpec::new();
+        let mut stack = String::new();
         let chars: Vec<char> = s.chars().collect();
-        while cursor < s.len() {
-            let c = chars[cursor];
-            if c == '[' {
-                cursor += 1;
-                let mut group = vec![];
-                while cursor < s.len() {
-                    let c = chars[cursor];
-                    if c == ']' {
-                        groups.push(group);
-                        break;
-                    }
-                    group.push(c);
-                    cursor += 1;
+        // parse length first
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            stack.push(c);
+            i += 1;
+            if stack.ends_with(&first_sep) {
+                if let Ok(length) = stack[..stack.len() - first_sep.len()].parse() {
+                    spec = spec.length(length);
+                    stack = String::new();
+                    break;
+                } else {
+                    return Err(PasswordParseError::InvalidLength(
+                        stack[..stack.len() - first_sep.len()].to_string(),
+                    ));
                 }
-            } else if c == '{' && !length_done {
-                cursor += 1;
-                while cursor < s.len() {
-                    let c = chars[cursor];
-                    if c.is_numeric() {
-                        length.push(c);
-                    } else {
-                        if c == '}' {
-                            length_done = true;
-                            break;
-                        }
-                        return Err(PasswordParseError::InvalidLength);
-                    }
-                    cursor += 1;
-                }
-            } else {
-                return Err(PasswordParseError::ImproperFormat);
             }
-            cursor += 1;
-        }
-        let length = length
-            .into_iter()
-            .collect::<String>()
-            .parse()
-            .map_err(|_| PasswordParseError::InvalidLength)?;
-        let mut choices = vec![];
-        for group in groups {
-            let c = group
-                .into_iter()
-                .collect::<String>()
-                .parse()
-                .map_err(|_| PasswordParseError::ImproperFormat)?;
-            choices.push(c);
         }
 
-        Ok(PasswordSpec {
-            choices: Choices::from(choices),
-            length,
-        })
+        // parse choices
+        let mut choice = (None, None);
+        while i < chars.len() {
+            let c = chars[i];
+            if choice.0.is_none() {
+                stack.push(c);
+                if stack.ends_with(&second_sep) {
+                    if let Ok(interval) =
+                        stack[..stack.len() - second_sep.len()].parse::<Interval>()
+                    {
+                        choice.0 = Some(interval);
+                        stack = String::new();
+                    } else {
+                        return Err(PasswordParseError::BadInterval(
+                            stack[..stack.len() - second_sep.len()].to_string(),
+                        ));
+                    }
+                }
+                i += 1;
+            } else if choice.1.is_none() {
+                if c != first_sep_char && stack.ends_with(&first_sep) {
+                    if let Ok(charset) = stack[..stack.len() - first_sep.len()].parse::<CharStyle>()
+                    {
+                        choice.1 = Some(charset);
+                        stack = String::new();
+                    } else {
+                        return Err(PasswordParseError::BadCharset(
+                            stack[..stack.len() - first_sep.len()].to_string(),
+                        ));
+                    }
+                }
+
+                stack.push(c);
+                i += 1;
+            } else {
+                spec = spec.include(Choice::from_interval(choice.0.unwrap(), choice.1.unwrap()));
+                choice = (None, None);
+            }
+        }
+
+        // since parsing requires a peek, need to handle the very end of the string
+        // having a trailing // is valid
+        if stack.ends_with(&second_sep) {
+            if let Ok(charset) = stack[..stack.len() - second_sep.len()].parse::<CharStyle>() {
+                choice.1 = Some(charset);
+                stack = String::new();
+            } else {
+                return Err(PasswordParseError::BadCharset(
+                    stack[..stack.len() - second_sep.len()].to_string(),
+                ));
+            }
+        }
+
+        if !stack.is_empty() && choice.1.is_none() {
+            if let Ok(charset) = stack.parse::<CharStyle>() {
+                choice.1 = Some(charset);
+            } else {
+                return Err(PasswordParseError::BadCharset(
+                    stack[..stack.len()].to_string(),
+                ));
+            }
+        }
+
+        match choice {
+            (Some(interval), Some(charset)) => {
+                spec = spec.include(Choice::from_interval(interval, charset));
+            }
+            (None, None) => {}
+            _ => {
+                return Err(PasswordParseError::ImproperFormat);
+            }
+        }
+
+        Ok(spec)
     }
 }
 
 impl Display for PasswordSpec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.choices)?;
-        write!(f, "{{{}}}", self.length)
+        write!(f, "{}", self.length)?;
+        write!(f, "{}", self.choices)
     }
 }
 
@@ -368,7 +414,7 @@ impl From<Vec<Choice>> for Choices {
 impl Display for Choices {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for choice in &self.choices {
-            write!(f, "[{}]", choice)?;
+            write!(f, "//{}", choice)?;
         }
         Ok(())
     }

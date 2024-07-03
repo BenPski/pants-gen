@@ -18,7 +18,7 @@
 //!  - 1 symbol
 //!  - password of length 16
 //! ```bash
-//! $ pants-gen --spec '[:upper:|3+][:lower:|1-2][:number:|3-][:symbol:|1]{16}'
+//! $ pants-gen --spec '16//3+|:upper://1-2|:lower://3-|:number://1|:symbol:'
 //! 8Z6TWWCARwJxC)8C
 //! ```
 //!

@@ -10,9 +10,9 @@ use clap::Parser;
     about,
     long_about = "Generate a password based on a spec. Generally the default spec should cover things\
         with possibly a length adjustment with -l N. If the default symbols cause problems try: -s 0 -c '$_-+|1+' or something similar to substitute in a restricted set of symbols.\
-        To fully alter the spec use --spec '[charset|1+][charset2|2]{20} and customize fairly freely.",
-    after_help = "General formatting follows the style of CHARSET|INTERVAL \
-        and the overall spec is a combination of these and a length as [CHARSET|INTERVAL]{length}. \
+        To fully alter the spec use something like --spec '20//1+|charset1//2|charset2 and customize fairly freely.",
+    after_help = "General formatting follows the style of INTERVAL|CHARSET \
+        and the overall spec is a combination of these and a length as length//INTERVAL|CHARSET//. \
         A CHARSET is any character and there are special charset patterns\
         (:upper:, :lower:, :number:, :symbol:). An interval follows the form N for\
         exactly N characters, N+ for at least N characters, N- for at most N characters,\
@@ -24,7 +24,7 @@ pub struct CliArgs {
     #[arg(
         short = 'p',
         long,
-        default_value = "[:upper:|1+][:lower:|1+][:number:|1+][:symbol:|1+]{32}"
+        default_value = "32//1+|:upper://1+|:lower://1+|:number://1+|:symbol:"
     )]
     spec: PasswordSpec,
     /// length of the generated password
@@ -42,7 +42,7 @@ pub struct CliArgs {
     /// constraints on symbols characters, N|N+|N-|A-B
     #[arg(short, long)]
     symbol: Option<Interval>,
-    /// constraints on custom characters, CHARSET|INTERVAL
+    /// constraints on custom characters, INTERVAL|CHARSET
     #[arg(short, long)]
     custom: Vec<Choice>,
 }
