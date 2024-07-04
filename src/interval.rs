@@ -1,4 +1,6 @@
-use std::{error::Error, fmt::Display, str::FromStr};
+use std::str::FromStr;
+
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interval {
@@ -45,29 +47,12 @@ impl Interval {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum IntervalParseError {
+    #[error("Expect the interval to have the first value <= the second, got {0} <= {1}")]
     BadBounds(usize, usize),
+    #[error("got `{0}`, expect the format for an interval to be: N, N+, N-, or A-B")]
     ImproperFormat(String),
-}
-
-impl Error for IntervalParseError {}
-
-impl Display for IntervalParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::BadBounds(a, b) => write!(
-                f,
-                "Expect the interval to have the first value <= the second, got {} <= {}",
-                a, b
-            ),
-            Self::ImproperFormat(s) => write!(
-                f,
-                "Expect the format for an interval to be: N, N+, N-, or A-B, got {}",
-                s
-            ),
-        }
-    }
 }
 
 impl FromStr for Interval {

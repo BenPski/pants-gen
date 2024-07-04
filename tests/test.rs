@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use pants_gen::password::PasswordSpec;
+    use pants_gen::password::{CharStyle, Choice, PasswordSpec};
 
     #[test]
     fn default_spec_parses() {
@@ -14,6 +14,13 @@ mod tests {
         let spec = PasswordSpec::default();
         let gen = spec.generate();
         assert!(gen.is_some());
+    }
+
+    #[test]
+    fn parse_choice() {
+        let choice_string = CharStyle::Upper.exactly(10).to_string();
+        let parsed = choice_string.parse::<Choice>();
+        assert!(parsed.is_ok());
     }
 
     // should have a better test for these since there are quite a few combinations
@@ -58,5 +65,26 @@ mod tests {
             .unwrap();
 
         assert!(gen >= amount);
+    }
+
+    #[test]
+    fn bad_interval() {
+        let spec_string = "32//1-0|:upper:";
+        let spec = spec_string.parse::<PasswordSpec>();
+        assert!(spec.is_err())
+    }
+
+    #[test]
+    fn bad_pattern() {
+        let spec_string = "32//1+|:not_real:";
+        let spec = spec_string.parse::<PasswordSpec>();
+        assert!(spec.is_err())
+    }
+
+    #[test]
+    fn bad_length() {
+        let spec_string = "twenty//1+|:upper:";
+        let spec = spec_string.parse::<PasswordSpec>();
+        assert!(spec.is_err())
     }
 }

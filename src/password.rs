@@ -8,7 +8,7 @@ use rand::{
 };
 use thiserror::Error;
 
-use crate::interval::Interval;
+use crate::interval::{Interval, IntervalParseError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasswordSpec {
@@ -40,6 +40,8 @@ pub enum PasswordParseError {
     BadInterval(String),
     #[error("Couldn't parse the charset `{0}`.")]
     BadCharset(String),
+    #[error("{0}")]
+    BadChoice(ChoiceParseError),
 }
 
 // password spec specified as a string would look something like
@@ -50,9 +52,9 @@ impl FromStr for PasswordSpec {
     type Err = PasswordParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim_start();
-        let first_sep = "//".to_string();
-        let first_sep_char = first_sep.chars().last().unwrap();
-        let second_sep = "|".to_string();
+        let sep = "//".to_string();
+        let sep_char = sep.chars().last().unwrap();
+        // let second_sep = "|".to_string();
         let mut spec = PasswordSpec::new();
         let mut stack = String::new();
         let chars: Vec<char> = s.chars().collect();
@@ -62,90 +64,46 @@ impl FromStr for PasswordSpec {
             let c = chars[i];
             stack.push(c);
             i += 1;
-            if stack.ends_with(&first_sep) {
-                if let Ok(length) = stack[..stack.len() - first_sep.len()].parse() {
-                    spec = spec.length(length);
-                    stack = String::new();
-                    break;
-                } else {
-                    return Err(PasswordParseError::InvalidLength(
-                        stack[..stack.len() - first_sep.len()].to_string(),
-                    ));
-                }
+            if stack.ends_with(&sep) {
+                let length: usize = stack[..stack.len() - sep.len()].parse().map_err(|_| {
+                    PasswordParseError::InvalidLength(stack[..stack.len() - sep.len()].to_string())
+                })?;
+                spec = spec.length(length);
+                stack = String::new();
+                break;
             }
         }
 
         // parse choices
-        let mut choice = (None, None);
         while i < chars.len() {
             let c = chars[i];
-            if choice.0.is_none() {
-                stack.push(c);
-                if stack.ends_with(&second_sep) {
-                    if let Ok(interval) =
-                        stack[..stack.len() - second_sep.len()].parse::<Interval>()
-                    {
-                        choice.0 = Some(interval);
-                        stack = String::new();
-                    } else {
-                        return Err(PasswordParseError::BadInterval(
-                            stack[..stack.len() - second_sep.len()].to_string(),
-                        ));
-                    }
-                }
-                i += 1;
-            } else if choice.1.is_none() {
-                if c != first_sep_char && stack.ends_with(&first_sep) {
-                    if let Ok(charset) = stack[..stack.len() - first_sep.len()].parse::<CharStyle>()
-                    {
-                        choice.1 = Some(charset);
-                        stack = String::new();
-                    } else {
-                        return Err(PasswordParseError::BadCharset(
-                            stack[..stack.len() - first_sep.len()].to_string(),
-                        ));
-                    }
-                }
-
-                stack.push(c);
-                i += 1;
-            } else {
-                spec = spec.include(Choice::from_interval(choice.0.unwrap(), choice.1.unwrap()));
-                choice = (None, None);
+            if c != sep_char && stack.ends_with(&sep) {
+                let choice = stack[..stack.len() - sep.len()]
+                    .parse()
+                    .map_err(PasswordParseError::BadChoice)?;
+                spec = spec.include(choice);
+                stack = String::new();
             }
+            stack.push(c);
+            i += 1;
         }
 
         // since parsing requires a peek, need to handle the very end of the string
         // having a trailing // is valid
-        if stack.ends_with(&second_sep) {
-            if let Ok(charset) = stack[..stack.len() - second_sep.len()].parse::<CharStyle>() {
-                choice.1 = Some(charset);
-                stack = String::new();
-            } else {
-                return Err(PasswordParseError::BadCharset(
-                    stack[..stack.len() - second_sep.len()].to_string(),
-                ));
-            }
+        if stack.ends_with(&sep) {
+            let choice = stack[..stack.len() - sep.len()]
+                .parse()
+                .map_err(PasswordParseError::BadChoice)?;
+            spec = spec.include(choice);
+            stack = String::new();
         }
 
-        if !stack.is_empty() && choice.1.is_none() {
-            if let Ok(charset) = stack.parse::<CharStyle>() {
-                choice.1 = Some(charset);
-            } else {
-                return Err(PasswordParseError::BadCharset(
-                    stack[..stack.len()].to_string(),
-                ));
-            }
-        }
-
-        match choice {
-            (Some(interval), Some(charset)) => {
-                spec = spec.include(Choice::from_interval(interval, charset));
-            }
-            (None, None) => {}
-            _ => {
-                return Err(PasswordParseError::ImproperFormat);
-            }
+        if !stack.is_empty() {
+            let choice = stack[..stack.len()]
+                .parse()
+                .map_err(PasswordParseError::BadChoice)?;
+            spec = spec.include(choice);
+            // stack = String::new();
         }
 
         Ok(spec)
@@ -372,8 +330,8 @@ impl Display for CharStyle {
 pub enum CharStyleParseError {
     #[error("No character set")]
     NoCharset,
-    #[error("Specified a :pattern:, but it wasn't recognized")]
-    UnrecognizedPattern,
+    #[error("Specified a :pattern:, but `{0}` isn't recognized")]
+    UnrecognizedPattern(String),
 }
 
 impl FromStr for CharStyle {
@@ -389,7 +347,7 @@ impl FromStr for CharStyle {
                 if s.is_empty() {
                     Err(CharStyleParseError::NoCharset)
                 } else if chars[0] == ':' && chars[s.len() - 1] == ':' {
-                    Err(CharStyleParseError::UnrecognizedPattern)
+                    Err(CharStyleParseError::UnrecognizedPattern(s.to_string()))
                 } else {
                     Ok(CharStyle::Custom(chars))
                 }
@@ -476,23 +434,23 @@ impl Hash for Choice {
 
 #[derive(Debug, Error)]
 pub enum ChoiceParseError {
-    #[error("Need both a character set and interval when specifying a choice, charset|interval")]
-    NoInterval,
-    #[error("Unable to parse the given interval")]
-    BadInterval,
-    #[error("Charset parse error, `{0}`")]
+    #[error("Unable to parse `{0}`, expect a form like interval|charset")]
+    BadFormat(String),
+    #[error("{0}")]
+    BadInterval(IntervalParseError),
+    #[error("{0}")]
     CharStyle(CharStyleParseError),
 }
 
-// chars|interval -> Choice
+// interval|charset -> Choice
 impl FromStr for Choice {
     type Err = ChoiceParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let pos = s.rfind('|').ok_or(ChoiceParseError::NoInterval)?;
-        let chars: CharStyle = s[..pos].parse().map_err(ChoiceParseError::CharStyle)?;
-        let interval = s[pos + 1..]
-            .parse()
-            .map_err(|_| ChoiceParseError::BadInterval)?;
+        let pos = s
+            .find('|')
+            .ok_or_else(|| ChoiceParseError::BadFormat(s.to_string()))?;
+        let interval = s[..pos].parse().map_err(ChoiceParseError::BadInterval)?;
+        let chars: CharStyle = s[pos + 1..].parse().map_err(ChoiceParseError::CharStyle)?;
         Ok(Choice::from_interval(interval, chars))
     }
 }
