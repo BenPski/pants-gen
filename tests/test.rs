@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use pants_gen::password::{CharStyle, Choice, PasswordSpec};
+    use pants_gen::{charset::Charset, choice::Choice, password::PasswordSpec};
 
     #[test]
     fn default_spec_parses() {
@@ -18,7 +18,7 @@ mod tests {
 
     #[test]
     fn parse_choice() {
-        let choice_string = CharStyle::Upper.exactly(10).to_string();
+        let choice_string = Charset::Upper.exactly(10).to_string();
         let parsed = choice_string.parse::<Choice>();
         assert!(parsed.is_ok());
     }
