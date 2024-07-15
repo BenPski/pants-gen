@@ -1,13 +1,13 @@
-//! A password generator that can be used as a library or at the command line
+//! Password generation library used in `pants`
 //!
 //! When using from the command line can either provide a spec string, or override the default (or
 //! current spec string) with other arguments.
 //!
 //!
-//! # CLI examples
+//! # CLI examples (requires pants to be installed)
 //! Using the default spec
 //! ```bash
-//! $ pants-gen
+//! $ pants gen
 //! PHk};IUX{59!H88252x4wjD(Fg|5cva|
 //! ```
 //!
@@ -18,14 +18,14 @@
 //!  - 1 symbol
 //!  - password of length 16
 //! ```bash
-//! $ pants-gen --spec '16//3+|:upper://1-2|:lower://3-|:number://1|:symbol:'
+//! $ pants gen --spec '16//3+|:upper://1-2|:lower://3-|:number://1|:symbol:'
 //! 8Z6TWWCARwJxC)8C
 //! ```
 //!
 //! Overriding parts of the default spec
 //!  - setting the length to be 12
 //! ```bash
-//! $ pants-gen -l 12
+//! $ pants gen -l 12
 //! bS),2VMV2G+T
 //! ```
 //!
@@ -33,7 +33,7 @@
 //!  - disabling the symbols
 //!  - setting an equivalent set of symbols to be !@#$%^&*|_+-=
 //! ```bash
-//! $ pants-gen -s 0 -c '!@#$%^&*|_+-=|1+'
+//! $ pants gen -s 0 -c '!@#$%^&*|_+-=|1+'
 //! =LsI8=%@%GP5hMlIm%#dj9&66V9-#7h@
 //! ```
 //!
@@ -43,13 +43,14 @@
 //! function returns an `Option` since the constraints on the provided choices can't always meet
 //! the length requirement given.
 //! ```rust
-//! use pants_gen::password::{PasswordSpec, CharStyle};
+//! use pants_gen::charset::Charset;
+//! use pants_gen::password::PasswordSpec;
 //! use pants_gen::interval::Interval;
 //! let spec = PasswordSpec::new()
 //!     .length(16)
 //!     .upper_at_least(1)
 //!     .lower(Interval::new(1,10).unwrap())
-//!     .include(CharStyle::Number.exactly(3))
+//!     .include(Charset::Number.exactly(3))
 //!     .custom(vec!['&', '^'], Interval::exactly(1));
 //! if let Some(p) = spec.generate() {
 //!     println!("{}", p);
@@ -57,6 +58,7 @@
 //!     println!("Couldn't meet constraints of spec");
 //! }
 //! ```
-pub mod cli;
+pub mod charset;
+pub mod choice;
 pub mod interval;
 pub mod password;
